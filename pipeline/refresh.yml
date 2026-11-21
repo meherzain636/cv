@@ -1,0 +1,69 @@
+name: refresh
+
+# Manual runs only — nothing here runs on a timer. Trigger it from the
+# Actions tab ("Run workflow") whenever you want a fresh pass.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Parse only — skip delivery"
+        required: false
+        type: boolean
+        default: false
+      rows_per_post:
+        description: "Rows per delivery request"
+        required: false
+        type: string
+        default: "10000"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: refresh
+  cancel-in-progress: false
+
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SOURCE_URL: ${{ secrets.SOURCE_URL }}
+      SOURCE_TOKEN: ${{ secrets.SOURCE_TOKEN }}
+      TARGET_URL: ${{ secrets.TARGET_URL }}
+      TARGET_TOKEN: ${{ secrets.TARGET_TOKEN }}
+      TARGET_GZIP: ${{ vars.TARGET_GZIP || 'false' }}
+      DEBUG_NAMES: ${{ vars.DEBUG_NAMES || 'false' }}
+      HTTP_TIMEOUT: ${{ vars.HTTP_TIMEOUT || '300' }}
+      MAX_UNCOMPRESSED_MB: ${{ vars.MAX_UNCOMPRESSED_MB || '2048' }}
+      DRY_RUN: ${{ github.event.inputs.dry_run == 'true' && 'true' || 'false' }}
+      ROWS_PER_POST: ${{ github.event.inputs.rows_per_post || '10000' }}
+      AUDIT_DIR: ${{ runner.temp }}/audit
+      WORK_DIR: ${{ runner.temp }}/work
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch and deliver
+        run: python pipeline/sync.py
+
+      - name: Save audit log (failures only)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-${{ github.run_id }}
+          path: ${{ runner.temp }}/audit
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Wipe all run data
+        if: always()
+        run: |
+          rm -rf "${RUNNER_TEMP:?}/work" "${RUNNER_TEMP:?}/audit"
+          echo "scratch wiped; the runner VM itself is destroyed after the job"
