@@ -1,9 +1,10 @@
 name: refresh
 
-# Manual runs only — nothing here runs on a timer. Trigger it from the
-# Actions tab ("Run workflow") whenever you want a fresh pass.
+# Runs on every push to main, and from the Actions tab ("Run workflow").
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       dry_run:
