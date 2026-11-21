@@ -39,8 +39,6 @@ jobs:
       MAX_UNCOMPRESSED_MB: ${{ vars.MAX_UNCOMPRESSED_MB || '2048' }}
       DRY_RUN: ${{ github.event.inputs.dry_run == 'true' && 'true' || 'false' }}
       ROWS_PER_POST: ${{ github.event.inputs.rows_per_post || '10000' }}
-      AUDIT_DIR: ${{ runner.temp }}/audit
-      WORK_DIR: ${{ runner.temp }}/work
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -51,6 +49,9 @@ jobs:
           python-version: "3.12"
 
       - name: Fetch and deliver
+        env:
+          AUDIT_DIR: ${{ runner.temp }}/audit
+          WORK_DIR: ${{ runner.temp }}/work
         run: python pipeline/sync.py
 
       - name: Save audit log (failures only)
