@@ -24,6 +24,7 @@ Configuration (environment):
   ROWS_PER_POST        rows per delivery request (default 10000)
   HTTP_TIMEOUT         per-request timeout in seconds (default 300)
   MAX_UNCOMPRESSED_MB  cap on decompressed archive size (default 2048)
+  DELIVERY_DELAY_SECONDS optional pause after delivery requests (default 0)
   WORK_DIR             scratch dir; default is a fresh temp dir. Wiped
                        before and after the run.
   AUDIT_DIR            audit log directory (default ./audit-log); not wiped.
@@ -81,6 +82,7 @@ class Config:
     timeout: int
     max_uncompressed: int
     gzip_body: bool
+    delivery_delay: float
 
 
 def utc_now() -> str:
@@ -111,6 +113,19 @@ def env_int(name: str, default: int, lo: int, hi: int) -> int:
         raise ConfigError(f"{name} must be an integer, got {raw!r}") from None
     if not lo <= value <= hi:
         raise ConfigError(f"{name} must be between {lo} and {hi}, got {value}")
+    return value
+
+
+def env_float(name: str, default: float, lo: float, hi: float) -> float:
+    raw = env_str(name)
+    if raw is None:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        raise ConfigError(f"{name} must be a number, got {raw!r}") from None
+    if not lo <= value <= hi:
+        raise ConfigError(f"{name} must be between {lo:g} and {hi:g}, got {value:g}")
     return value
 
 
@@ -235,6 +250,7 @@ def http_post_json(
     gzip_body: bool,
     what: str,
     audit: Audit,
+    delay_seconds: float = 0,
 ) -> tuple[int, int]:
     """POST a JSON payload with retries. Returns (status, body_bytes)."""
     body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
@@ -255,6 +271,8 @@ def http_post_json(
                 status = getattr(response, "status", 200)
                 response.read()
                 if 200 <= status < 300:
+                    if delay_seconds > 0:
+                        time.sleep(delay_seconds)
                     return status, len(body)
                 raise PipelineError(f"endpoint returned unexpected HTTP {status} for {what}")
         except urllib.error.HTTPError as exc:
@@ -402,7 +420,8 @@ def deliver_table(ds: dict, batch_id: str, cfg: Config, audit: Audit) -> dict:
                         chunk_count=ds["chunk_count"], rows=len(buffer), bytes=size)
         else:
             _, sent = http_post_json(cfg.target_url, cfg.target_token, payload,
-                                     cfg.timeout, cfg.gzip_body, what, audit)
+                                     cfg.timeout, cfg.gzip_body, what, audit,
+                                     cfg.delivery_delay)
             bytes_sent += sent
             audit.event("post_chunk", table=audit.name(ds["name"]), chunk_index=chunk_index,
                         chunk_count=ds["chunk_count"], rows=len(buffer), bytes=sent)
@@ -485,6 +504,7 @@ def main() -> int:
         timeout=env_int("HTTP_TIMEOUT", 300, 10, 900),
         max_uncompressed=env_int("MAX_UNCOMPRESSED_MB", 2048, 1, 4096) * 1024 * 1024,
         gzip_body=env_bool("TARGET_GZIP"),
+        delivery_delay=env_float("DELIVERY_DELAY_SECONDS", 0, 0, 60),
     )
     debug_names = env_bool("DEBUG_NAMES")
 
@@ -564,7 +584,8 @@ def main() -> int:
         }
         if not cfg.dry_run:
             http_post_json(cfg.target_url, cfg.target_token, manifest,
-                           cfg.timeout, cfg.gzip_body, "begin manifest", audit)
+                           cfg.timeout, cfg.gzip_body, "begin manifest", audit,
+                           cfg.delivery_delay)
         audit.event("post_begin", datasets=len(datasets),
                     rows_total=sum(d["rows"] for d in datasets), dry_run=cfg.dry_run)
 
@@ -591,7 +612,8 @@ def main() -> int:
         }
         if not cfg.dry_run:
             http_post_json(cfg.target_url, cfg.target_token, completion,
-                           cfg.timeout, cfg.gzip_body, "completion notice", audit)
+                           cfg.timeout, cfg.gzip_body, "completion notice", audit,
+                           cfg.delivery_delay)
         audit.event("post_complete", datasets=completion["datasets"],
                     rows_delivered=completion["rows_delivered"],
                     chunks_delivered=completion["chunks_delivered"],

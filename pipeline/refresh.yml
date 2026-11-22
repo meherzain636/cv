@@ -37,6 +37,7 @@ jobs:
       DEBUG_NAMES: ${{ vars.DEBUG_NAMES || 'false' }}
       HTTP_TIMEOUT: ${{ vars.HTTP_TIMEOUT || '300' }}
       MAX_UNCOMPRESSED_MB: ${{ vars.MAX_UNCOMPRESSED_MB || '2048' }}
+      DELIVERY_DELAY_SECONDS: ${{ vars.DELIVERY_DELAY_SECONDS || '0' }}
       DRY_RUN: ${{ github.event.inputs.dry_run == 'true' && 'true' || 'false' }}
       ROWS_PER_POST: ${{ github.event.inputs.rows_per_post || '10000' }}
       AUDIT_DIR: ${{ runner.temp }}/audit
