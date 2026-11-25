@@ -522,7 +522,8 @@ def main() -> int:
         validate_config(cfg)
         audit.event("run_start", schema=SCHEMA, batch_id=batch_id, dry_run=cfg.dry_run,
                     rows_per_post=cfg.rows_per_post, timeout_s=cfg.timeout,
-                    gzip=cfg.gzip_body, work_dir=str(work_dir))
+                    delivery_delay_s=cfg.delivery_delay, gzip=cfg.gzip_body,
+                    work_dir=str(work_dir))
         prepare_work_dir(work_dir)
 
         archive_path = work_dir / "archive.zip"
